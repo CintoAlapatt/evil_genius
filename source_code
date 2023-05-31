@@ -1,0 +1,149 @@
+import numpy as np
+import pandas as pd
+import json
+import re
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# # Load the pickle file using the older version of pandas
+data = pd.read_pickle('C:\\Users\\cinto\\Downloads\\data-20230530T224728Z-001\\data\\game_state_frame_data.pickle')
+#
+# # Save the data to a CSV file
+ data.to_csv('your_data.csv')
+#
+# # Now, you can load the CSV file using your current pandas version:
+ data_new = pd.read_csv('your_data.csv')
+
+
+
+def fix_json(s):
+    if isinstance(s, str):
+        s = s.replace("'", '"')
+        s = re.sub(r'}\s*{', '},{', s)
+        return '[' + s + ']'
+    else:
+        return s
+
+class ProcessGameState:
+    def __init__(self, file):
+        self.data = pd.read_csv(file)
+        self.data['inventory'] = self.data['inventory'].apply(lambda x: json.loads(fix_json(x)) if isinstance(x, str) else x)
+
+    def within_boundary(self, boundary_coords):
+        boundary_df = pd.DataFrame(boundary_coords, columns=['x', 'y'])
+        poly = boundary_df.values
+        self.data['in_boundary'] = self.data.apply(lambda row: self.point_in_poly(row['x'], row['y'], poly), axis=1)
+
+    def extract_weapon_class(self):
+        def extract_weapon_class(inventory):
+            if isinstance(inventory, list):
+                for weapon in inventory:
+                    if 'weapon_class' in weapon:
+                        if weapon['weapon_class'] in ['Rifles', 'Submachine Guns', 'Machine Guns']:
+                            return weapon['weapon_class']
+            return None
+
+        self.data['weapon_class'] = self.data['inventory'].apply(extract_weapon_class)
+
+    @staticmethod
+    def point_in_poly(x, y, poly):
+        num = len(poly)
+        i = 0
+        j = num - 1
+        c = False
+        for i in range(num):
+            if ((poly[i][1] > y) != (poly[j][1] > y)) and \
+                    (x < poly[i][0] + (poly[j][0] - poly[i][0]) * (y - poly[i][1]) /
+                                     (poly[j][1] - poly[i][1])):
+                c = not c
+            j = i
+        return c
+
+def is_common_strategy(data, boundary_coords, team='Team2', side='T'):
+    team_data = data[(data['team'] == team) & (data['side'] == side)]
+    within_boundary = team_data['in_boundary']
+    strategy_commonness_ratio = within_boundary.sum() / len(within_boundary)
+    return strategy_commonness_ratio >= 0.5
+
+
+def average_entry_time(data, team='Team2', bombsite='BombsiteB'):
+    def extract_weapon_class(inventory):
+        if isinstance(inventory, list):
+            weapon_classes = [weapon['weapon_class'] for weapon in inventory if 'weapon_class' in weapon]
+            rifle_count = weapon_classes.count('Rifles')
+            smg_count = weapon_classes.count('Submachine Guns')
+            if rifle_count >= 2 or smg_count >=1:
+                return True
+        return False
+
+    team_data = data.loc[(data['team'] == team) & (data['area_name'] == bombsite)].copy()
+    team_data.loc[:, 'has_required_weapons'] = team_data['inventory'].apply(extract_weapon_class)
+    valid_rounds = team_data.groupby('round_num').apply(
+        lambda x: x[x['has_required_weapons']]['seconds'].min()
+    )
+    avg_time = valid_rounds.mean()
+    return avg_time
+
+def extract_weapon_class(inventory):
+    if isinstance(inventory, list):
+        for weapon in inventory:
+            if 'weapon_class' in weapon:
+                if weapon['weapon_class'] in ['Rifles', 'Submachine Guns']:
+                    return weapon['weapon_class']
+    return None
+
+
+
+
+# Initialize the class with your data
+game = ProcessGameState('your_data.csv')
+
+# Apply the boundary to the data
+boundary_coords = [[-1735, 250], [-2024, 398], [-2806, 742], [-2472, 1233], [-1565, 580]]
+game.within_boundary(boundary_coords)
+
+# Extract the weapon classes from the inventory
+game.extract_weapon_class()
+
+# Check if entering via the light blue boundary is a common strategy used by Team2 on T side
+common_strategy = is_common_strategy(game.data, boundary_coords, team='Team2', side='T')
+print(f"Is entering via the light blue boundary a common strategy used by Team2 on T side? {'Yes' if common_strategy else 'No'}")
+
+# Calculate the average entry time for Team2 to enter BombsiteB with at least 2 rifles or SMGs
+avg_time = average_entry_time(game.data, team='Team2',  bombsite='BombsiteB')
+print(f"The average time for Team2 to enter BombsiteB with at least 2 rifles or SMGs is: {avg_time}")
+
+
+
+# Filter the game data for players in BombsiteB
+bombsite_b_data = game.data[game.data['area_name'] == 'BombsiteB']
+
+# Extract x and y coordinates
+x = bombsite_b_data['x']
+y = bombsite_b_data['y']
+
+# Create a 2D histogram of player positions
+heatmap, xedges, yedges = np.histogram2d(x, y, bins=(100, 100))
+
+# Create a figure and axes
+fig, ax = plt.subplots()
+
+# Create the heatmap plot with a new colormap
+sns.heatmap(heatmap, cmap='coolwarm', ax=ax)
+
+# Set the axis labels
+ax.set_xlabel('X Position')
+ax.set_ylabel('Y Position')
+
+# Set the title
+ax.set_title('Player Positions Heatmap')
+
+# Display the heatmap
+plt.show()
+
+
+
+
+
+
+
