@@ -122,14 +122,21 @@ bombsite_b_data = game.data[game.data['area_name'] == 'BombsiteB']
 x = bombsite_b_data['x']
 y = bombsite_b_data['y']
 
+# Define bins based on range of x and y coordinates
+x_bins = np.linspace(min(x), max(x), 100)
+y_bins = np.linspace(min(y), max(y), 100)
+
 # Create a 2D histogram of player positions
-heatmap, xedges, yedges = np.histogram2d(x, y, bins=(100, 100))
+heatmap, xedges, yedges = np.histogram2d(x, y, bins=[x_bins, y_bins])
 
 # Create a figure and axes
 fig, ax = plt.subplots()
 
 # Create the heatmap plot with a new colormap
-sns.heatmap(heatmap, cmap='coolwarm', ax=ax)
+c = ax.imshow(heatmap.T, cmap='coolwarm', origin='lower', extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]])
+
+# Create colorbar
+cbar = fig.colorbar(c, ax=ax)
 
 # Set the axis labels
 ax.set_xlabel('X Position')
